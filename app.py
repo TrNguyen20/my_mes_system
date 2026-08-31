@@ -98,6 +98,82 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
+# ADMIN USER MANAGEMENT
+
+@app.route('/admin/create-user', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_create_user():
+    username = request.form.get('username')
+    email = request.form.get('email')
+    password = request.form.get('password')
+    confirm_password = request.form.get('confirm_password')
+    role = request.form.get('role')
+
+    if not all([username, email, password, confirm_password, role]):
+        flash("All fields are required.", "danger")
+        return redirect(url_for('admin_users'))
+
+    if password != confirm_password:
+        flash("Passwords do not match.", "danger")
+        return redirect(url_for('admin_users'))
+
+    if User.query.filter_by(username=username).first():
+        flash("Username already exists.", "danger")
+        return redirect(url_for('admin_users'))
+
+    new_user = User(username=username, email=email, role=role)
+    new_user.set_password(password)
+    
+    db.session.add(new_user)
+    db.session.commit()
+    
+    log_action('USER_CREATE', 'User', new_user.id, f'Created user: {username} as {role}')
+    flash("User created successfully", "success")
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/users')
+@login_required
+@role_required('admin')
+def admin_users():
+    users = User.query.order_by(User.date_created.desc()).all()
+    user_count = User.query.count()
+    return render_template('admin_users.html', users=users, user_count=user_count)
+
+@app.route('/admin/toggle-user/<int:id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_toggle_user(id):
+    if current_user.id == id:
+        flash("You cannot deactivate yourself.", "danger")
+        return redirect(url_for('admin_users'))
+    
+    user = User.query.get_or_404(id)
+    user.is_active = not user.is_active
+    db.session.commit()
+    
+    status_str = "ACTIVATED" if user.is_active else "DEACTIVATED"
+    log_action('USER_TOGGLE', 'User', user.id, f'{status_str} user: {user.username}')
+    flash(f"User {user.username} has been {status_str.lower()}.", "info")
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/delete-user/<int:id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_delete_user(id):
+    if current_user.id == id:
+        flash("You cannot delete yourself.", "danger")
+        return redirect(url_for('admin_users'))
+    
+    user = User.query.get_or_404(id)
+    username_ref = user.username
+    db.session.delete(user)
+    db.session.commit()
+    
+    log_action('USER_DELETE', 'User', id, f'Deleted user: {username_ref}')
+    flash(f"User {username_ref} deleted successfully.", "warning")
+    return redirect(url_for('admin_users'))
+
 @app.route('/')
 @login_required
 def index():
@@ -193,3 +269,7 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
+
+with app.app_context():
+    print(app.url_map)    

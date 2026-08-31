@@ -17,21 +17,50 @@
 <body>
 
 <!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow">
     <div class="container">
-        <a class="navbar-brand" href="/">🏭 MES SYSTEM</a>
-        <div class="d-flex align-items-center">
-            <span class="text-light me-3 small">Xin chào, <strong>{{ current_user.username }}</strong> ({{ current_user.role }})</span>
-            {% if current_user.role == 'admin' %}
-                <a href="/audit-log" class="btn btn-sm btn-outline-warning me-2">Nhật ký</a>
-            {% endif %}
-            {% if current_user.role in ['admin', 'manager'] %}
-                <a href="/export" class="btn btn-sm btn-outline-success me-2">Xuất Excel</a>
-            {% endif %}
-            <a href="/logout" class="btn btn-sm btn-danger">Đăng xuất</a>
+        <a class="navbar-brand fw-bold" href="/">🏭 MES SYSTEM</a>
+        
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto align-items-center">
+                {% if current_user.role == 'admin' %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle text-warning" href="#" id="adminDropdown" role="button" data-bs-toggle="dropdown">
+                        Admin Menu
+                    </a>
+                    <ul class="dropdown-menu shadow">
+                        <li><a class="dropdown-item" href="/admin/users">Manage Users</a></li>
+                        <li><a class="dropdown-item" href="/audit-log">Audit Log</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item disabled" href="#">System Settings</a></li>
+                    </ul>
+                </li>
+                {% endif %}
+                
+                {% if current_user.role in ['admin', 'manager'] %}
+                <li class="nav-item">
+                    <a href="/export" class="btn btn-sm btn-success ms-lg-2">📥 Export CSV</a>
+                </li>
+                {% endif %}
+            </ul>
+
+            <div class="d-flex align-items-center">
+                <span class="text-light me-3">
+                    👤 <span class="fw-bold">{{ current_user.username }}</span> · 
+                    <span class="badge {% if current_user.role == 'admin' %}bg-danger{% elif current_user.role == 'manager' %}bg-warning{% else %}bg-secondary{% endif %}">
+                        {{ current_user.role|upper }}
+                    </span>
+                </span>
+                <a href="/logout" class="btn btn-sm btn-outline-danger">Logout</a>
+            </div>
         </div>
     </div>
 </nav>
+
 
 <div class="container">
     <!-- Thông báo Flash -->
