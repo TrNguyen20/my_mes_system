@@ -10,6 +10,9 @@ from flask_bcrypt import Bcrypt
 from openpyxl.styles import Font, PatternFill, Alignment
 from sqlalchemy import or_
 
+import gspread # NEW
+
+
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mes_v2.db'
 app.config['SECRET_KEY'] = 'industrial_level_secret_2025'
@@ -291,6 +294,46 @@ def view_audit_log():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(100).all()
     return render_template('audit_log.html', logs=logs)
 
+
+@app.route('/import-from-sheets')
+@login_required
+@role_required('admin', 'manager')
+def import_from_sheets():
+    # THAY LINK SHEET CỦA BẠN VÀO ĐÂY
+    SHEET_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID_HERE/edit"
+    
+    sheet_data = fetch_sheet_orders(SHEET_URL)
+    
+    if not sheet_data:
+        flash("Không thể lấy dữ liệu từ Google Sheets hoặc Sheet trống.", "danger")
+        return redirect(url_for('index'))
+    
+    imported = 0
+    skipped = 0
+    
+    for row in sheet_data:
+        # Kiểm tra trùng mã PO trong Database
+        existing = WorkOrder.query.filter_by(po_number=row['po_number']).first()
+        if existing:
+            skipped += 1
+            continue
+            
+        try:
+            new_order = WorkOrder(
+                po_number=row['po_number'],
+                part_name=row['part_name'],
+                quantity=int(row['quantity'])
+            )
+            db.session.add(new_order)
+            imported += 1
+        except:
+            continue
+            
+    db.session.commit()
+    log_action('SYNC_SHEETS', 'System', 0, f'Imported: {imported}')
+    flash(f"📊 Đồng bộ xong: Thêm mới {imported}, Bỏ qua {skipped} mã PO đã tồn tại.", "success")
+    return redirect(url_for('index'))
+
 # --- CLI & INIT ---
 
 @app.cli.command("seed-admin")
@@ -307,3 +350,32 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
+
+
+def fetch_sheet_orders(sheet_url):
+    try:
+        # Kết nối tới Google Sheets bằng file credentials.json
+        gc = gspread.service_account(filename='credentials.json')
+        sh = gc.open_by_url(sheet_url)
+        worksheet = sh.get_worksheet(0) # Lấy Sheet đầu tiên
+        
+        # Lấy tất cả dữ liệu (Trả về danh sách các Dictionary)
+        records = worksheet.get_all_records()
+        
+        data = []
+        for row in records:
+            po = str(row.get('po_number', '')).strip()
+            if not po: continue # Bỏ qua nếu PO trống
+            
+            data.append({
+                'po_number': po,
+                'part_name': str(row.get('part_name', 'N/A')),
+                'quantity': row.get('quantity', 0)
+            })
+        return data
+    except Exception as e:
+        print(f"Google Sheets Error: {e}")
+        return []
+
+

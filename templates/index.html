@@ -138,6 +138,8 @@
         </div>
     </div>
 </div>
+
+
     <!-- Hộp KPI Charts Đa năng 
     <div class="row g-3 mb-4">
         <div class="col-md-3">
@@ -241,6 +243,9 @@
         <form action="/import-excel" method="POST" enctype="multipart/form-data" class="modal-content">
             <div class="modal-header"><h5>Nhập từ Excel</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
             <div class="modal-body text-center">
+                <a href="/import-from-sheets" class="btn btn-sm btn-outline-info ms-2">
+    <i class="bi bi-google"></i> Sync from Sheets
+</a>
                 <a href="/download-excel-template" class="btn btn-sm btn-link mb-3">⬇ Tải file mẫu .xlsx</a>
                 <input type="file" name="excel_file" class="form-control" accept=".xlsx" required>
             </div>
