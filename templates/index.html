@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Executive MES Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .kpi-card { border-left: 5px solid #0d6efd; border-radius: 8px; }
+        .bg-pending { border-left-color: #6c757d; }
+        .bg-progress { border-left-color: #ffc107; }
+        .bg-completed { border-left-color: #198754; }
+    </style>
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container">
+        <span class="navbar-brand">🏭 Enterprise Production System</span>
+        <a href="/export" class="btn btn-outline-success">📥 Download CSV Report</a>
+    </div>
+</nav>
+
+<div class="container">
+    <!-- TOP ROW: KPI CARDS & CHART -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card p-3 shadow-sm kpi-card bg-pending mb-2">
+                <small class="text-muted">PENDING ORDERS</small>
+                <h3>{{ stats.pending }}</h3>
+            </div>
+            <div class="card p-3 shadow-sm kpi-card bg-progress mb-2">
+                <small class="text-muted">IN PRODUCTION</small>
+                <h3>{{ stats.progress }}</h3>
+            </div>
+            <div class="card p-3 shadow-sm kpi-card bg-completed">
+                <small class="text-muted">COMPLETED TODAY</small>
+                <h3>{{ stats.completed }}</h3>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card p-3 shadow-sm h-100">
+                <canvas id="prodChart"></canvas>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 shadow-sm h-100">
+                <h5>Quick Add Order</h5>
+                <form action="/add" method="POST">
+                    <input type="text" name="po_number" class="form-control mb-2" placeholder="PO Number (e.g. PO-990)" required>
+                    <input type="text" name="part_name" class="form-control mb-2" placeholder="Part Name" required>
+                    <input type="number" name="quantity" class="form-control mb-2" placeholder="Quantity" required>
+                    <button class="btn btn-primary w-100">Create Work Order</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEARCH & FILTER -->
+    <div class="row mb-3">
+        <div class="col-md-12">
+            <form action="/" method="GET" class="d-flex">
+                <input type="text" name="search" class="form-control me-2" placeholder="Search PO Number or Part Name...">
+                <button class="btn btn-secondary" type="submit">Search</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN DATA TABLE -->
+    <div class="table-responsive bg-white shadow-sm rounded">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>PO Number</th>
+                    <th>Part Details</th>
+                    <th>Timeline Status</th>
+                    <th>Lead Time (Min)</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td><strong>{{ order.po_number }}</strong></td>
+                    <td>{{ order.part_name }} <br><small class="text-muted">Qty: {{ order.quantity }}</small></td>
+                    <td>
+                        <div class="progress" style="height: 20px;">
+                            {% if order.status == 'Pending' %}
+                                <div class="progress-bar bg-secondary" style="width: 33%">Ordered</div>
+                            {% elif order.status == 'In Progress' %}
+                                <div class="progress-bar bg-warning" style="width: 66%">In Production</div>
+                            {% else %}
+                                <div class="progress-bar bg-success" style="width: 100%">Ready</div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        {% if order.get_duration() %}
+                            <span class="badge bg-dark">{{ order.get_duration() }} min</span>
+                        {% else %}
+                            <span class="text-muted small">Calculating...</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if order.status != 'Completed' %}
+                        <a href="/update/{{order.id}}" class="btn btn-sm btn-outline-primary">Advance Step</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const ctx = document.getElementById('prodChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Pending', 'In Progress', 'Completed'],
+            datasets: [{
+                label: 'Orders Status',
+                data: [{{ stats.pending }}, {{ stats.progress }}, {{ stats.completed }}],
+                backgroundColor: ['#6c757d', '#ffc107', '#198754']
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+</script>
+</body>
+</html>
