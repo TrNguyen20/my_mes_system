@@ -8,11 +8,11 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
 from openpyxl.styles import Font, PatternFill, Alignment
-
+from sqlalchemy import or_
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mes_v2.db'
-app.config['SECRET_KEY'] = 'industrial_level_secret'
+app.config['SECRET_KEY'] = 'industrial_level_secret_2025'
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -41,7 +41,7 @@ class WorkOrder(db.Model):
     po_number = db.Column(db.String(50), unique=True, nullable=False)
     part_name = db.Column(db.String(100), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
-    status = db.Column(db.String(20), default='Pending') # Pending, In Progress, Completed
+    status = db.Column(db.String(20), default='Pending') 
     date_created = db.Column(db.DateTime, default=datetime.now)
     date_started = db.Column(db.DateTime, nullable=True)
     date_completed = db.Column(db.DateTime, nullable=True)
@@ -84,7 +84,7 @@ def log_action(action, target_type, target_id, detail=''):
     db.session.add(log)
     db.session.commit()
 
-# --- AUTH ROUTES ---
+# --- ROUTES ---
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -105,15 +105,18 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-# --- CORE MES ROUTES ---
-
 @app.route('/')
 @login_required
 def index():
     search = request.args.get('search', '')
     query = WorkOrder.query
     if search:
-        query = query.filter(WorkOrder.po_number.contains(search) | WorkOrder.part_name.contains(search))
+        query = query.filter(or_(
+            WorkOrder.po_number.contains(search),
+            WorkOrder.part_name.contains(search),
+            WorkOrder.status.contains(search),
+            db.cast(WorkOrder.quantity, db.String).contains(search)
+        ))
     orders = query.order_by(WorkOrder.date_created.desc()).all()
 
     stats = {
@@ -121,7 +124,7 @@ def index():
         'progress': WorkOrder.query.filter_by(status='In Progress').count(),
         'completed': WorkOrder.query.filter_by(status='Completed').count(),
     }
-    return render_template('index.html', orders=orders, stats=stats)
+    return render_template('index.html', orders=orders, stats=stats, search_val=search)
 
 @app.route('/add', methods=['POST'])
 @login_required
@@ -157,8 +160,6 @@ def update_status(id):
     db.session.commit()
     log_action('STATUS_CHANGE', 'WorkOrder', order.id, f'{old_status} -> {order.status}')
     return redirect(url_for('index'))
-
-# --- EXCEL & EXPORT ROUTES ---
 
 @app.route('/import-excel', methods=['POST'])
 @login_required
@@ -201,47 +202,56 @@ def download_template():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Import Template"
-    
-    # Styling
-    header_fill = PatternFill(start_color="2d3436", end_color="2d3436", fill_type="solid")
-    header_font = Font(bold=True, color="FFFFFF")
-    
+
+    header_style = PatternFill(start_color="2d3436", end_color="2d3436", fill_type="solid")
+    sample_style = PatternFill(start_color="dfe6e9", end_color="dfe6e9", fill_type="solid")
+    white_font = Font(bold=True, color="FFFFFF")
+    warning_font = Font(italic=True, color="e17055")
+    center_align = Alignment(horizontal="center", vertical="center")
+
     headers = ["PO Number", "Part Name", "Quantity"]
     ws.append(headers)
     for cell in ws[1]:
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center")
-    
+        cell.fill = header_style
+        cell.font = white_font
+        cell.alignment = center_align
+
+    samples = [
+        ["PO-SAMPLE-001", "Engine Bolt M8", 500],
+        ["PO-SAMPLE-025", "Cavity Plate A3", 150]
+    ]
+    for r_idx, data in enumerate(samples, 20):
+        for c_idx, val in enumerate(data, 1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=val)
+            cell.fill = sample_style
+            cell.alignment = center_align
+
+    ws.merge_cells('A6:C6')
+    ws['A6'] = "⚠ Delete sample rows before importing. Keep header row."
+    ws['A6'].font = warning_font
+    ws['A6'].alignment = center_align
+
     ws.column_dimensions['A'].width = 25
     ws.column_dimensions['B'].width = 35
     ws.column_dimensions['C'].width = 15
-    
+    ws.freeze_panes = "A2"
+
     wb.save(output)
     output.seek(0)
     return send_file(output, as_attachment=True, download_name="MES_Template.xlsx")
 
-#Để Excel nhận diện đúng tiếng Việt hoặc ký tự đặc biệt, ta cần thêm \ufeff vào đầu file.
 @app.route('/export-csv')
 @login_required
 @role_required('admin', 'manager')
 def export_csv():
     output = io.StringIO()
-    # Thêm ký tự BOM để Excel mở đúng định dạng UTF-8
     output.write('\ufeff') 
     writer = csv.writer(output)
     writer.writerow(['PO Number', 'Tên sản phẩm', 'Số lượng', 'Trạng thái', 'Lead Time (Phút)'])
-    
-    orders = WorkOrder.query.all()
-    for o in orders:
+    for o in WorkOrder.query.all():
         writer.writerow([o.po_number, o.part_name, o.quantity, o.status, o.get_duration()])
-    
     output.seek(0)
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=report_mes.csv"}
-    )
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=report.csv"})
 
 # --- ADMIN ROUTES ---
 
@@ -250,7 +260,8 @@ def export_csv():
 @role_required('admin')
 def admin_users():
     users = User.query.all()
-    return render_template('admin_users.html', users=users)
+    user_count = User.query.count()
+    return render_template('admin_users.html', users=users, user_count=user_count)
 
 @app.route('/admin/create-user', methods=['POST'])
 @login_required
@@ -280,7 +291,7 @@ def view_audit_log():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(100).all()
     return render_template('audit_log.html', logs=logs)
 
-# --- INIT ---
+# --- CLI & INIT ---
 
 @app.cli.command("seed-admin")
 def seed_admin():
@@ -296,73 +307,3 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True)
-
-
-from openpyxl.styles import Font, PatternFill, Alignment
-
-@app.route('/download-excel-template')
-def download_template():
-    output = io.BytesIO()
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Import Template"
-
-    # Định nghĩa các Styles
-    header_style = PatternFill(start_color="2d3436", end_color="2d3436", fill_type="solid")
-    sample_style = PatternFill(start_color="dfe6e9", end_color="dfe6e9", fill_type="solid")
-    white_font = Font(bold=True, color="FFFFFF")
-    sample_font = Font(color="2d3436")
-    warning_font = Font(italic=True, color="e17055") # Màu cam (orange)
-    center_align = Alignment(horizontal="center", vertical="center")
-
-    # 1. Header Row (Dòng 1)
-    headers = ["PO Number", "Part Name", "Quantity"]
-    ws.append(headers)
-    ws.row_dimensions[1].height = 20
-    for cell in ws[1]:
-        cell.fill = header_style
-        cell.font = white_font
-        cell.alignment = center_align
-
-    # 2. Note Row (Dòng 6)
-    ws.merge_cells('A6:C6')
-    ws['A6'] = "⚠ Delete sample rows before importing. Keep header row."
-    ws['A6'].font = warning_font
-    ws['A6'].alignment = center_align
-
-    # 3. Sample Data Rows (Dòng 20 - 25)
-    samples = [
-        ["PO-SAMPLE-001", "Engine Bolt M8", 500],
-        ["PO-SAMPLE-002", "Shaft Bearing 6205", 200],
-        ["PO-SAMPLE-003", "Cover Plate A3", 150],
-        ["PO-SAMPLE-004", "Example Item 4", 100],
-        ["PO-SAMPLE-005", "Example Item 5", 300],
-        ["PO-SAMPLE-025", "Cavity Plate A3", 150]
-    ]]
-    
-    # Ghi dữ liệu mẫu vào đúng dòng yêu cầu
-    current_row = 20
-    for data in samples:
-        for col, value in enumerate(data, 1):
-            cell = ws.cell(row=current_row, column=col, value=value)
-            cell.fill = sample_style
-            cell.font = sample_font
-            cell.alignment = center_align
-        current_row += 1
-
-    # 4. Column Widths
-    ws.column_dimensions['A'].width = 25
-    ws.column_dimensions['B'].width = 35
-    ws.column_dimensions['C'].width = 15
-
-    # 5. Freeze Pane (Cố định dòng 1)
-    ws.freeze_panes = "A2"
-
-    wb.save(output)
-    output.seek(0)
-    return send_file(
-        output, 
-        as_attachment=True, 
-        download_name="MES_Import_Template.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
