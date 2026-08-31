@@ -1,0 +1,630 @@
+
+Skip to main content
+Building Your First MES System
+6 493 tokens
+
+User 13:16
+as a web developer professional with strong MES-ERP knowledge, please mentor me to build my MES system on a Web App for my real project to track, add, build up, and create an interactive interface, and can scale up in the future for the zero-experience like me. Please kindly mentor me through every single step and things that easy to make right the first time. Build web-app in mainly HTML (a little bit CSS and JS) language and Python as the second language.
+Model 13:22
+ThinkingThoughts
+Expand to view model thoughts
+
+chevron_right
+Welcome to the world of industrial software. Building an MES (Manufacturing Execution System) is a brilliant way to learn full-stack development because it involves real-world logic: tracking a product from a raw material to a finished good.
+As your mentor, I will guide you to build a "Minimum Viable Product" (MVP). We will focus on Work Order Management—the heart of any MES.
+The Strategy
+The Brain (Backend): Python with Flask (simple, powerful, and beginner-friendly).
+The Memory (Database): SQLite (comes built-in with Python, no setup required).
+The Face (Frontend): HTML with Bootstrap (Bootstrap is a CSS framework that makes your site look professional instantly without you writing complex CSS).
+Step 1: Set Up Your Workshop
+Before coding, you need your tools.
+Install Python: Download from python.org.
+Install VS Code: This is your code editor.
+Create a Project Folder: Create a folder named my_mes_system.
+Open VS Code and open that folder.
+Install Flask: Open the terminal in VS Code (Ctrl+`) and type:
+code
+Bash
+pip install flask flask-sqlalchemy
+Step 2: The Blueprint (The Database)
+In an MES, we need to store data. We will start with a table for Work Orders.
+Create a file named app.py and paste this code. I have commented it so you understand what each line does.
+code
+Python
+from flask import Flask, render_template, request, redirect
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
+app = Flask(__name__)
+# This creates a database file named 'mes_data.db' inside your folder
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mes_data.db'
+db = SQLAlchemy(app)
+
+# Defining what a 'Work Order' looks like
+class WorkOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    part_name = db.Column(db.String(100), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), default='Pending') # Pending, In Progress, Completed
+    date_created = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Create the database
+with app.app_context():
+    db.create_all()
+
+@app.route('/')
+def index():
+    # Fetch all orders from database to show on screen
+    orders = WorkOrder.query.order_by(WorkOrder.date_created).all()
+    return render_template('index.html', orders=orders)
+
+@app.route('/add', methods=['POST'])
+def add_order():
+    # Get data from the HTML form
+    name = request.form['part_name']
+    qty = request.form['quantity']
+    
+    new_order = WorkOrder(part_name=name, quantity=qty)
+    db.session.add(new_order)
+    db.session.commit()
+    return redirect('/')
+
+@app.route('/update/<int:id>')
+def update_status(id):
+    order = WorkOrder.query.get_or_404(id)
+    if order.status == 'Pending':
+        order.status = 'In Progress'
+    elif order.status == 'In Progress':
+        order.status = 'Completed'
+    db.session.commit()
+    return redirect('/')
+
+if __name__ == "__main__":
+    app.run(debug=True)
+Step 3: The Interface (The HTML)
+Flask looks for HTML files in a folder called templates.
+Create a new folder named templates.
+Inside templates, create a file named index.html.
+We will use Bootstrap (via a link) so your buttons and tables look modern immediately.
+code
+Html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple MES System</title>
+    <!-- Bootstrap CSS for instant professional look -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { margin-top: 50px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 class="mb-4">🏭 Shop Floor Control (MES)</h2>
+
+    <!-- Form to Add New Work Order -->
+    <div class="card card-body mb-4 shadow-sm">
+        <form action="/add" method="POST" class="row g-3">
+            <div class="col-md-6">
+                <input type="text" name="part_name" class="form-control" placeholder="Part Name (e.g. Engine Bolt)" required>
+            </div>
+            <div class="col-md-4">
+                <input type="number" name="quantity" class="form-control" placeholder="Quantity" required>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Create Order</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Interactive Table -->
+    <table class="table table-hover bg-white shadow-sm">
+        <thead class="table-dark">
+            <tr>
+                <th>ID</th>
+                <th>Part Name</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td>{{ order.id }}</td>
+                <td>{{ order.part_name }}</td>
+                <td>{{ order.quantity }}</td>
+                <td>
+                    <span class="badge {% if order.status == 'Completed' %}bg-success{% elif order.status == 'In Progress' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                        {{ order.status }}
+                    </span>
+                </td>
+                <td>
+                    {% if order.status != 'Completed' %}
+                    <a href="/update/{{order.id}}" class="btn btn-sm btn-outline-info">Next Step</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+</body>
+</html>
+Step 4: Running Your System
+In your terminal, make sure you are in the my_mes_system folder.
+Run the app:
+code
+Bash
+python app.py
+The terminal will say: Running on http://127.0.0.1:5000.
+Open your web browser and go to that address.
+Congratulations! You have just built a live MES tracking tool.
+Mentor's Advice: Why this is "Right the First Time"
+SQLite (Scalability): Using Python's SQLAlchemy means if your factory grows to 1,000 workers, you can switch from SQLite to a massive database like PostgreSQL by changing just one line of code.
+State Management: By using a "Status" column (Pending -> In Progress -> Completed), you are following the core MES principle of WIP (Work In Progress) tracking.
+Bootstrap: You didn't waste hours fighting with CSS. Your interface is "Responsive" (it will work on a tablet on the shop floor) by default.
+Your Next Homework (Phase 2)
+Once you have this running, don't stop. To make it a "Real" MES, try adding these one by one:
+Usernames: Add a field to track who created the order.
+Timestamping: Log exactly what time an order moved to "Completed" to calculate lead times.
+Data Visualization: Use a library called Chart.js (JavaScript) to show a pie chart of how many orders are completed vs pending.
+Would you like me to show you how to add the "Timestamp" or the "Dashboard Chart" next?
+Model 13:24
+ThinkingThoughts
+Expand to view model thoughts
+
+chevron_right
+This is an excellent progression. In the MES world, Timestamps allow us to calculate Lead Time (how long a part takes to make), and Charts provide Real-Time Visibility for factory managers.
+Step 1: Update the Database (The "Memory")
+We need to add two new fields: date_started and date_completed.
+Important Note: Since we are changing the structure of the database, the easiest way for a beginner to apply these changes is to delete the old mes_data.db file in your folder. Python will recreate it with the new structure when you run it.
+Update your app.py with this code:
+code
+Python
+from flask import Flask, render_template, request, redirect
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mes_data.db'
+db = SQLAlchemy(app)
+
+class WorkOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    part_name = db.Column(db.String(100), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), default='Pending')
+    date_created = db.Column(db.DateTime, default=datetime.now)
+    # NEW FIELDS
+    date_started = db.Column(db.DateTime, nullable=True)
+    date_completed = db.Column(db.DateTime, nullable=True)
+
+with app.app_context():
+    db.create_all()
+
+@app.route('/')
+def index():
+    orders = WorkOrder.query.order_by(WorkOrder.date_created.desc()).all()
+    
+    # DATA FOR THE CHART
+    # We count how many orders are in each status
+    pending_count = WorkOrder.query.filter_by(status='Pending').count()
+    progress_count = WorkOrder.query.filter_by(status='In Progress').count()
+    completed_count = WorkOrder.query.filter_by(status='Completed').count()
+    
+    chart_data = [pending_count, progress_count, completed_count]
+    
+    return render_template('index.html', orders=orders, chart_data=chart_data)
+
+@app.route('/add', methods=['POST'])
+def add_order():
+    name = request.form['part_name']
+    qty = request.form['quantity']
+    new_order = WorkOrder(part_name=name, quantity=qty)
+    db.session.add(new_order)
+    db.session.commit()
+    return redirect('/')
+
+@app.route('/update/<int:id>')
+def update_status(id):
+    order = WorkOrder.query.get_or_404(id)
+    
+    if order.status == 'Pending':
+        order.status = 'In Progress'
+        order.date_started = datetime.now() # Capture Start Time
+    elif order.status == 'In Progress':
+        order.status = 'Completed'
+        order.date_completed = datetime.now() # Capture Completion Time
+        
+    db.session.commit()
+    return redirect('/')
+
+if __name__ == "__main__":
+    app.run(debug=True)
+Step 2: The Interactive Interface (index.html)
+We will use Chart.js, a very popular library. It is "beginner-friendly" because it only requires a small bit of JavaScript.
+Update your templates/index.html:
+code
+Html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MES Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Load Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #f4f7f6; }
+        .stats-card { height: 300px; }
+    </style>
+</head>
+<body>
+
+<div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2>🏭 Advanced MES Tracker</h2>
+            <p class="text-muted">Real-time Production Monitoring</p>
+        </div>
+        <!-- CHART SECTION -->
+        <div class="col-md-4">
+            <div class="card shadow-sm p-3 stats-card">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- FORM SECTION -->
+    <div class="card card-body mb-4 shadow-sm">
+        <form action="/add" method="POST" class="row g-3">
+            <div class="col-md-6">
+                <input type="text" name="part_name" class="form-control" placeholder="Enter Part Number/Name" required>
+            </div>
+            <div class="col-md-3">
+                <input type="number" name="quantity" class="form-control" placeholder="Qty" required>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-success w-100">🚀 Create Work Order</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- TABLE SECTION -->
+    <table class="table table-hover bg-white shadow-sm border rounded">
+        <thead class="table-dark">
+            <tr>
+                <th>Order ID</th>
+                <th>Part Info</th>
+                <th>Status</th>
+                <th>Timestamps (Start → End)</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td>#{{ order.id }}</td>
+                <td><strong>{{ order.part_name }}</strong> <br><small>Qty: {{ order.quantity }}</small></td>
+                <td>
+                    <span class="badge {% if order.status == 'Completed' %}bg-success{% elif order.status == 'In Progress' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                        {{ order.status }}
+                    </span>
+                </td>
+                <td>
+                    <!-- Displaying the Timestamps -->
+                    <small>
+                        Started: {{ order.date_started.strftime('%H:%M:%S') if order.date_started else '---' }} <br>
+                        Finished: {{ order.date_completed.strftime('%H:%M:%S') if order.date_completed else '---' }}
+                    </small>
+                </td>
+                <td>
+                    {% if order.status != 'Completed' %}
+                    <a href="/update/{{order.id}}" class="btn btn-sm btn-primary">Move to Next Stage</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+    // CHART.JS LOGIC
+    const ctx = document.getElementById('statusChart').getContext('2d');
+    const statusChart = new Chart(ctx, {
+        type: 'doughnut', // You can change this to 'bar' or 'pie'
+        data: {
+            labels: ['Pending', 'In Progress', 'Completed'],
+            datasets: [{
+                data: {{ chart_data | tojson }}, // This takes the data from Python!
+                backgroundColor: ['#6c757d', '#ffc107', '#198754'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: { display: true, text: 'Order Status Distribution' }
+            }
+        }
+    });
+</script>
+
+</body>
+</html>
+Mentor's Breakdown: What we just achieved
+The "Live" Link: Look at data: {{ chart_data | tojson }} in the HTML. This is the magic bridge. We calculated the numbers in Python (Backend) and sent them directly into a JavaScript variable (Frontend).
+Formatting Data: We used .strftime('%H:%M:%S'). In industrial apps, humans can't read raw computer dates. Formatting them to HH:MM:SS makes the shop floor operator's life easier.
+Conditional Logic: In the timestamp column, we used an "if" statement. This prevents the app from crashing if a date hasn't been recorded yet (e.g., showing --- if the order hasn't finished).
+How to test your work:
+Delete mes_data.db.
+Run python app.py.
+Add 3 orders.
+Click "Move to Next Stage" on some of them.
+Watch the Chart update and the Timestamps appear instantly!
+Your Next Challenge (Phase 3)
+Now that you have data and time, you are ready for the most important MES metric: Performance.
+Would you like to learn how to:
+Calculate Duration: Automatically show how many minutes it took to complete an order?
+CSV Export: Add a button to download your production data into Excel? (Managers love this).
+Model 13:54
+ThinkingThoughts
+Expand to view model thoughts
+
+chevron_right
+Since you want to move from a basic tracker to a professional-grade Manager/CEO Dashboard, we need to implement Business Intelligence (BI) logic.
+We will now add PO Numbers, Duration Calculations, and an Excel-friendly CSV Export.
+Step 1: The Professional Backend (app.py)
+We will update the database model to include a po_number and add the logic to export data.
+code
+Python
+from flask import Flask, render_template, request, redirect, Response
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+import csv
+import io
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mes_v2.db'
+db = SQLAlchemy(app)
+
+class WorkOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    po_number = db.Column(db.String(50), nullable=False) # New: PO Tracking
+    part_name = db.Column(db.String(100), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), default='Pending')
+    date_created = db.Column(db.DateTime, default=datetime.now)
+    date_started = db.Column(db.DateTime, nullable=True)
+    date_completed = db.Column(db.DateTime, nullable=True)
+
+    # Logic to calculate duration in minutes
+    def get_duration(self):
+        if self.date_started and self.date_completed:
+            diff = self.date_completed - self.date_started
+            return round(diff.total_seconds() / 60, 2) # Returns minutes
+        return None
+
+with app.app_context():
+    db.create_all()
+
+@app.route('/')
+def index():
+    # Search functionality for Managers
+    search = request.args.get('search')
+    if search:
+        orders = WorkOrder.query.filter(WorkOrder.po_number.contains(search) | WorkOrder.part_name.contains(search)).all()
+    else:
+        orders = WorkOrder.query.order_by(WorkOrder.date_created.desc()).all()
+
+    # Dashboard Metrics
+    stats = {
+        'pending': WorkOrder.query.filter_by(status='Pending').count(),
+        'progress': WorkOrder.query.filter_by(status='In Progress').count(),
+        'completed': WorkOrder.query.filter_by(status='Completed').count(),
+    }
+    return render_template('index.html', orders=orders, stats=stats)
+
+@app.route('/add', methods=['POST'])
+def add_order():
+    new_order = WorkOrder(
+        po_number=request.form['po_number'],
+        part_name=request.form['part_name'],
+        quantity=request.form['quantity']
+    )
+    db.session.add(new_order)
+    db.session.commit()
+    return redirect('/')
+
+@app.route('/update/<int:id>')
+def update_status(id):
+    order = WorkOrder.query.get_or_404(id)
+    if order.status == 'Pending':
+        order.status = 'In Progress'
+        order.date_started = datetime.now()
+    elif order.status == 'In Progress':
+        order.status = 'Completed'
+        order.date_completed = datetime.now()
+    db.session.commit()
+    return redirect('/')
+
+# CSV EXPORT FEATURE
+@app.route('/export')
+def export_csv():
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['PO Number', 'Part Name', 'Qty', 'Status', 'Duration (Min)'])
+    
+    orders = WorkOrder.query.all()
+    for o in orders:
+        writer.writerow([o.po_number, o.part_name, o.quantity, o.status, o.get_duration()])
+    
+    output.seek(0)
+    return Response(output, mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=factory_report.csv"})
+
+if __name__ == "__main__":
+    app.run(debug=True)
+Step 2: The CEO Dashboard Interface (index.html)
+Managers want KPIs at a glance and a Search bar to find specific POs.
+code
+Html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Executive MES Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .kpi-card { border-left: 5px solid #0d6efd; border-radius: 8px; }
+        .bg-pending { border-left-color: #6c757d; }
+        .bg-progress { border-left-color: #ffc107; }
+        .bg-completed { border-left-color: #198754; }
+    </style>
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container">
+        <span class="navbar-brand">🏭 Enterprise Production System</span>
+        <a href="/export" class="btn btn-outline-success">📥 Download CSV Report</a>
+    </div>
+</nav>
+
+<div class="container">
+    <!-- TOP ROW: KPI CARDS & CHART -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card p-3 shadow-sm kpi-card bg-pending mb-2">
+                <small class="text-muted">PENDING ORDERS</small>
+                <h3>{{ stats.pending }}</h3>
+            </div>
+            <div class="card p-3 shadow-sm kpi-card bg-progress mb-2">
+                <small class="text-muted">IN PRODUCTION</small>
+                <h3>{{ stats.progress }}</h3>
+            </div>
+            <div class="card p-3 shadow-sm kpi-card bg-completed">
+                <small class="text-muted">COMPLETED TODAY</small>
+                <h3>{{ stats.completed }}</h3>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card p-3 shadow-sm h-100">
+                <canvas id="prodChart"></canvas>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 shadow-sm h-100">
+                <h5>Quick Add Order</h5>
+                <form action="/add" method="POST">
+                    <input type="text" name="po_number" class="form-control mb-2" placeholder="PO Number (e.g. PO-990)" required>
+                    <input type="text" name="part_name" class="form-control mb-2" placeholder="Part Name" required>
+                    <input type="number" name="quantity" class="form-control mb-2" placeholder="Quantity" required>
+                    <button class="btn btn-primary w-100">Create Work Order</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEARCH & FILTER -->
+    <div class="row mb-3">
+        <div class="col-md-12">
+            <form action="/" method="GET" class="d-flex">
+                <input type="text" name="search" class="form-control me-2" placeholder="Search PO Number or Part Name...">
+                <button class="btn btn-secondary" type="submit">Search</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN DATA TABLE -->
+    <div class="table-responsive bg-white shadow-sm rounded">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>PO Number</th>
+                    <th>Part Details</th>
+                    <th>Timeline Status</th>
+                    <th>Lead Time (Min)</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td><strong>{{ order.po_number }}</strong></td>
+                    <td>{{ order.part_name }} <br><small class="text-muted">Qty: {{ order.quantity }}</small></td>
+                    <td>
+                        <div class="progress" style="height: 20px;">
+                            {% if order.status == 'Pending' %}
+                                <div class="progress-bar bg-secondary" style="width: 33%">Ordered</div>
+                            {% elif order.status == 'In Progress' %}
+                                <div class="progress-bar bg-warning" style="width: 66%">In Production</div>
+                            {% else %}
+                                <div class="progress-bar bg-success" style="width: 100%">Ready</div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        {% if order.get_duration() %}
+                            <span class="badge bg-dark">{{ order.get_duration() }} min</span>
+                        {% else %}
+                            <span class="text-muted small">Calculating...</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if order.status != 'Completed' %}
+                        <a href="/update/{{order.id}}" class="btn btn-sm btn-outline-primary">Advance Step</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const ctx = document.getElementById('prodChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Pending', 'In Progress', 'Completed'],
+            datasets: [{
+                label: 'Orders Status',
+                data: [{{ stats.pending }}, {{ stats.progress }}, {{ stats.completed }}],
+                backgroundColor: ['#6c757d', '#ffc107', '#198754']
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+</script>
+</body>
+</html>
+Mentor's Strategy: Why this design works
+Lead Time Calculation: In app.py, we created a function get_duration. This is a "Calculated Field." Instead of storing the minutes in the database (which can get messy if someone edits the time), we calculate it on the fly. This ensures the data is always accurate.
+Manager "Control" Features:
+Search Bar: Managers deal with hundreds of parts. A search bar is non-negotiable for a "Real" project.
+CSV Export: Notice the export_csv function. It uses io.StringIO. This generates the file in the server's memory and sends it to the browser. It’s fast and doesn't clutter your server with temporary files.
+Visual Timelines: Instead of just text, we used Bootstrap Progress Bars. This allows a CEO to look at the screen for 2 seconds and know exactly how far along an order is.
+PO Numbers: This is the "Primary Key" for the business side. Linking production to a PO Number is the first step in connecting an MES to an ERP.
+Testing your new System:
+Delete the old mes_data.db (because we changed the table structure to include po_number).
+Run python app.py.
+Add an order with a PO number (e.g., PO-2024-001).
+Click "Advance Step" until it is "Completed."
+Check the Lead Time column—it will show the minutes.
+Click Download CSV Report and open it in Excel.
+Your Next Advanced Step (Phase 4)
+You now have a system that tracks, calculates, and reports. To make this truly industrial, we should look at Error Prevention.
+Would you like to learn how to:
+Inventory Check: Subtract materials from a "Stock" list every time a part is built?
+User Authentication: Create a login page so only "Admin" can delete orders while "Operators" can only update them?
+
