@@ -1,15 +1,18 @@
-from flask import Flask, render_template, request, redirect, Response, flash, url_for
+import io
+import csv
+import openpyxl
+from datetime import datetime
+from functools import wraps
+from flask import Flask, render_template, request, redirect, Response, flash, url_for, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
-from datetime import datetime
-from functools import wraps
-import csv
-import io
+from openpyxl.styles import Font, PatternFill, Alignment
+
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mes_v2.db'
-app.config['SECRET_KEY'] = 'mes_secret_key_123'
+app.config['SECRET_KEY'] = 'industrial_level_secret'
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -24,6 +27,7 @@ class User(db.Model, UserMixin):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     role = db.Column(db.String(20), default='operator') # admin, manager, operator
+    is_active = db.Column(db.Boolean, default=True)
     date_created = db.Column(db.DateTime, default=datetime.now)
 
     def set_password(self, password):
@@ -34,10 +38,10 @@ class User(db.Model, UserMixin):
 
 class WorkOrder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    po_number = db.Column(db.String(50), nullable=False)
+    po_number = db.Column(db.String(50), unique=True, nullable=False)
     part_name = db.Column(db.String(100), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
-    status = db.Column(db.String(20), default='Pending')
+    status = db.Column(db.String(20), default='Pending') # Pending, In Progress, Completed
     date_created = db.Column(db.DateTime, default=datetime.now)
     date_started = db.Column(db.DateTime, nullable=True)
     date_completed = db.Column(db.DateTime, nullable=True)
@@ -58,7 +62,7 @@ class AuditLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.now)
     user = db.relationship('User', backref='logs')
 
-# --- HELPERS ---
+# --- HELPERS & DECORATORS ---
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -69,7 +73,7 @@ def role_required(*roles):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if not current_user.is_authenticated or current_user.role not in roles:
-                flash("Bạn không có quyền thực hiện hành động này!", "danger")
+                flash("Quyền truy cập bị từ chối!", "danger")
                 return redirect(url_for('index'))
             return f(*args, **kwargs)
         return decorated_function
@@ -80,16 +84,19 @@ def log_action(action, target_type, target_id, detail=''):
     db.session.add(log)
     db.session.commit()
 
-# --- ROUTES ---
+# --- AUTH ROUTES ---
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         user = User.query.filter_by(username=request.form['username']).first()
         if user and user.check_password(request.form['password']):
+            if not user.is_active:
+                flash("Tài khoản đã bị vô hiệu hóa!", "danger")
+                return redirect(url_for('login'))
             login_user(user, remember=request.form.get('remember'))
             return redirect(url_for('index'))
-        flash('Sai tài khoản hoặc mật khẩu!', 'danger')
+        flash('Sai tên đăng nhập hoặc mật khẩu!', 'danger')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -98,86 +105,12 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-# ADMIN USER MANAGEMENT
-
-@app.route('/admin/create-user', methods=['POST'])
-@login_required
-@role_required('admin')
-def admin_create_user():
-    username = request.form.get('username')
-    email = request.form.get('email')
-    password = request.form.get('password')
-    confirm_password = request.form.get('confirm_password')
-    role = request.form.get('role')
-
-    if not all([username, email, password, confirm_password, role]):
-        flash("All fields are required.", "danger")
-        return redirect(url_for('admin_users'))
-
-    if password != confirm_password:
-        flash("Passwords do not match.", "danger")
-        return redirect(url_for('admin_users'))
-
-    if User.query.filter_by(username=username).first():
-        flash("Username already exists.", "danger")
-        return redirect(url_for('admin_users'))
-
-    new_user = User(username=username, email=email, role=role)
-    new_user.set_password(password)
-    
-    db.session.add(new_user)
-    db.session.commit()
-    
-    log_action('USER_CREATE', 'User', new_user.id, f'Created user: {username} as {role}')
-    flash("User created successfully", "success")
-    return redirect(url_for('admin_users'))
-
-@app.route('/admin/users')
-@login_required
-@role_required('admin')
-def admin_users():
-    users = User.query.order_by(User.date_created.desc()).all()
-    user_count = User.query.count()
-    return render_template('admin_users.html', users=users, user_count=user_count)
-
-@app.route('/admin/toggle-user/<int:id>', methods=['POST'])
-@login_required
-@role_required('admin')
-def admin_toggle_user(id):
-    if current_user.id == id:
-        flash("You cannot deactivate yourself.", "danger")
-        return redirect(url_for('admin_users'))
-    
-    user = User.query.get_or_404(id)
-    user.is_active = not user.is_active
-    db.session.commit()
-    
-    status_str = "ACTIVATED" if user.is_active else "DEACTIVATED"
-    log_action('USER_TOGGLE', 'User', user.id, f'{status_str} user: {user.username}')
-    flash(f"User {user.username} has been {status_str.lower()}.", "info")
-    return redirect(url_for('admin_users'))
-
-@app.route('/admin/delete-user/<int:id>', methods=['POST'])
-@login_required
-@role_required('admin')
-def admin_delete_user(id):
-    if current_user.id == id:
-        flash("You cannot delete yourself.", "danger")
-        return redirect(url_for('admin_users'))
-    
-    user = User.query.get_or_404(id)
-    username_ref = user.username
-    db.session.delete(user)
-    db.session.commit()
-    
-    log_action('USER_DELETE', 'User', id, f'Deleted user: {username_ref}')
-    flash(f"User {username_ref} deleted successfully.", "warning")
-    return redirect(url_for('admin_users'))
+# --- CORE MES ROUTES ---
 
 @app.route('/')
 @login_required
 def index():
-    search = request.args.get('search')
+    search = request.args.get('search', '')
     query = WorkOrder.query
     if search:
         query = query.filter(WorkOrder.po_number.contains(search) | WorkOrder.part_name.contains(search))
@@ -194,15 +127,20 @@ def index():
 @login_required
 @role_required('admin', 'manager')
 def add_order():
+    po = request.form['po_number'].strip()
+    if WorkOrder.query.filter_by(po_number=po).first():
+        flash(f"Lỗi: Mã PO {po} đã tồn tại!", "danger")
+        return redirect(url_for('index'))
+    
     new_order = WorkOrder(
-        po_number=request.form['po_number'],
+        po_number=po,
         part_name=request.form['part_name'],
         quantity=request.form['quantity']
     )
     db.session.add(new_order)
     db.session.commit()
     log_action('CREATE', 'WorkOrder', new_order.id, f'PO: {new_order.po_number}')
-    flash('Đã tạo lệnh sản xuất mới!', 'success')
+    flash("Tạo lệnh sản xuất thành công!", "success")
     return redirect(url_for('index'))
 
 @app.route('/update/<int:id>')
@@ -220,31 +158,120 @@ def update_status(id):
     log_action('STATUS_CHANGE', 'WorkOrder', order.id, f'{old_status} -> {order.status}')
     return redirect(url_for('index'))
 
-@app.route('/delete/<int:id>')
+# --- EXCEL & EXPORT ROUTES ---
+
+@app.route('/import-excel', methods=['POST'])
 @login_required
-@role_required('admin')
-def delete_order(id):
-    order = WorkOrder.query.get_or_404(id)
-    po_ref = order.po_number
-    db.session.delete(order)
+@role_required('admin', 'manager')
+def import_excel():
+    file = request.files.get('excel_file')
+    if not file or not file.filename.endswith('.xlsx'):
+        flash("File không hợp lệ!", "danger")
+        return redirect(url_for('index'))
+
+    wb = openpyxl.load_workbook(file)
+    ws = wb.active
+    imported, skipped, invalid = 0, 0, 0
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        po, name, qty = str(row[0]).strip(), str(row[1]).strip(), row[2]
+        if not po or po == "None": continue
+        
+        if WorkOrder.query.filter_by(po_number=po).first():
+            skipped += 1
+            continue
+        try:
+            qty_i = int(qty)
+            if qty_i <= 0: raise ValueError
+        except:
+            invalid += 1
+            continue
+
+        db.session.add(WorkOrder(po_number=po, part_name=name, quantity=qty_i))
+        imported += 1
+    
     db.session.commit()
-    log_action('DELETE', 'WorkOrder', id, f'PO: {po_ref}')
-    flash(f'Đã xóa lệnh {po_ref}', 'warning')
+    log_action('IMPORT_EXCEL', 'System', 0, f'Success: {imported}')
+    flash(f"✅ Đã nhập: {imported} | ⏭ Trùng: {skipped} | ❌ Lỗi: {invalid}", "info")
     return redirect(url_for('index'))
 
-@app.route('/export')
+@app.route('/download-excel-template')
+def download_template():
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Import Template"
+    
+    # Styling
+    header_fill = PatternFill(start_color="2d3436", end_color="2d3436", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    
+    headers = ["PO Number", "Part Name", "Quantity"]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+    
+    ws.column_dimensions['A'].width = 25
+    ws.column_dimensions['B'].width = 35
+    ws.column_dimensions['C'].width = 15
+    
+    wb.save(output)
+    output.seek(0)
+    return send_file(output, as_attachment=True, download_name="MES_Template.xlsx")
+
+#Để Excel nhận diện đúng tiếng Việt hoặc ký tự đặc biệt, ta cần thêm \ufeff vào đầu file.
+@app.route('/export-csv')
 @login_required
 @role_required('admin', 'manager')
 def export_csv():
     output = io.StringIO()
+    # Thêm ký tự BOM để Excel mở đúng định dạng UTF-8
+    output.write('\ufeff') 
     writer = csv.writer(output)
-    writer.writerow(['PO Number', 'Part Name', 'Qty', 'Status', 'Duration (Min)'])
+    writer.writerow(['PO Number', 'Tên sản phẩm', 'Số lượng', 'Trạng thái', 'Lead Time (Phút)'])
+    
     orders = WorkOrder.query.all()
     for o in orders:
         writer.writerow([o.po_number, o.part_name, o.quantity, o.status, o.get_duration()])
+    
     output.seek(0)
-    log_action('EXPORT', 'System', 0, 'Exported WorkOrders CSV')
-    return Response(output, mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=mes_report.csv"})
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=report_mes.csv"}
+    )
+
+# --- ADMIN ROUTES ---
+
+@app.route('/admin/users')
+@login_required
+@role_required('admin')
+def admin_users():
+    users = User.query.all()
+    return render_template('admin_users.html', users=users)
+
+@app.route('/admin/create-user', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_create_user():
+    user = User(username=request.form['username'], email=request.form['email'], role=request.form['role'])
+    user.set_password(request.form['password'])
+    db.session.add(user)
+    db.session.commit()
+    flash("Tạo người dùng thành công!", "success")
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/toggle-user/<int:id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_toggle_user(id):
+    if current_user.id == id: return redirect(url_for('admin_users'))
+    u = User.query.get_or_404(id)
+    u.is_active = not u.is_active
+    db.session.commit()
+    return redirect(url_for('admin_users'))
 
 @app.route('/audit-log')
 @login_required
@@ -253,17 +280,17 @@ def view_audit_log():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(100).all()
     return render_template('audit_log.html', logs=logs)
 
-# --- CLI COMMANDS ---
+# --- INIT ---
 
 @app.cli.command("seed-admin")
 def seed_admin():
     db.create_all()
     if not User.query.filter_by(username='admin').first():
-        admin = User(username='admin', email='admin@factory.com', role='admin')
-        admin.set_password('admin123')
-        db.session.add(admin)
+        u = User(username='admin', email='admin@mes.com', role='admin')
+        u.set_password('admin123')
+        db.session.add(u)
         db.session.commit()
-        print("Admin created: admin / admin123")
+        print("Admin account created: admin / admin123")
 
 if __name__ == "__main__":
     with app.app_context():
@@ -271,5 +298,71 @@ if __name__ == "__main__":
     app.run(debug=True)
 
 
-with app.app_context():
-    print(app.url_map)    
+from openpyxl.styles import Font, PatternFill, Alignment
+
+@app.route('/download-excel-template')
+def download_template():
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Import Template"
+
+    # Định nghĩa các Styles
+    header_style = PatternFill(start_color="2d3436", end_color="2d3436", fill_type="solid")
+    sample_style = PatternFill(start_color="dfe6e9", end_color="dfe6e9", fill_type="solid")
+    white_font = Font(bold=True, color="FFFFFF")
+    sample_font = Font(color="2d3436")
+    warning_font = Font(italic=True, color="e17055") # Màu cam (orange)
+    center_align = Alignment(horizontal="center", vertical="center")
+
+    # 1. Header Row (Dòng 1)
+    headers = ["PO Number", "Part Name", "Quantity"]
+    ws.append(headers)
+    ws.row_dimensions[1].height = 20
+    for cell in ws[1]:
+        cell.fill = header_style
+        cell.font = white_font
+        cell.alignment = center_align
+
+    # 2. Note Row (Dòng 6)
+    ws.merge_cells('A6:C6')
+    ws['A6'] = "⚠ Delete sample rows before importing. Keep header row."
+    ws['A6'].font = warning_font
+    ws['A6'].alignment = center_align
+
+    # 3. Sample Data Rows (Dòng 20 - 25)
+    samples = [
+        ["PO-SAMPLE-001", "Engine Bolt M8", 500],
+        ["PO-SAMPLE-002", "Shaft Bearing 6205", 200],
+        ["PO-SAMPLE-003", "Cover Plate A3", 150],
+        ["PO-SAMPLE-004", "Example Item 4", 100],
+        ["PO-SAMPLE-005", "Example Item 5", 300],
+        ["PO-SAMPLE-025", "Cavity Plate A3", 150]
+    ]]
+    
+    # Ghi dữ liệu mẫu vào đúng dòng yêu cầu
+    current_row = 20
+    for data in samples:
+        for col, value in enumerate(data, 1):
+            cell = ws.cell(row=current_row, column=col, value=value)
+            cell.fill = sample_style
+            cell.font = sample_font
+            cell.alignment = center_align
+        current_row += 1
+
+    # 4. Column Widths
+    ws.column_dimensions['A'].width = 25
+    ws.column_dimensions['B'].width = 35
+    ws.column_dimensions['C'].width = 15
+
+    # 5. Freeze Pane (Cố định dòng 1)
+    ws.freeze_panes = "A2"
+
+    wb.save(output)
+    output.seek(0)
+    return send_file(
+        output, 
+        as_attachment=True, 
+        download_name="MES_Import_Template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
